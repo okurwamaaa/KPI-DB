@@ -1,84 +1,33 @@
-DROP TABLE IF EXISTS review CASCADE;
-DROP TABLE IF EXISTS shipment CASCADE;
-DROP TABLE IF EXISTS payment CASCADE;
-DROP TABLE IF EXISTS order_item CASCADE;
-DROP TABLE IF EXISTS orders CASCADE;
-DROP TABLE IF EXISTS product_price_history CASCADE;
-DROP TABLE IF EXISTS product CASCADE;
-DROP TABLE IF EXISTS category CASCADE;
-DROP TABLE IF EXISTS address CASCADE;
-DROP TABLE IF EXISTS administrator CASCADE;
-DROP TABLE IF EXISTS seller CASCADE;
-DROP TABLE IF EXISTS buyer CASCADE;
-DROP TABLE IF EXISTS users CASCADE;
+# Лабораторна робота №5: Нормалізація бази даних
 
-CREATE TABLE users (
-    id SERIAL PRIMARY KEY,
-    email VARCHAR(255) NOT NULL UNIQUE,
-    password_hash VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMP
-);
+## 1. Аналіз ненормалізованої схеми (UNF/1NF)
+Вихідна таблиця `denormalized_orders` (файл `ddl-old.sql`) містить надлишкові дані. В одній таблиці зберігається інформація про покупця, товар та деталі доставки.
 
-CREATE TABLE buyer (
-    id SERIAL PRIMARY KEY,
-    user_id INT NOT NULL UNIQUE REFERENCES users(id),
-    first_name VARCHAR(100),
-    last_name VARCHAR(100),
-    phone VARCHAR(20)
-);
+**Проблеми (Аномалії):**
+* **Аномалія вставки:** Неможливо додати нового покупця, поки він не зробить замовлення.
+* **Аномалія оновлення:** Якщо у покупця зміниться телефон, потрібно оновлювати всі його старі замовлення.
+* **Аномалія видалення:** Якщо видалити замовлення, ми можемо втратити дані про товар або покупця.
 
-CREATE TABLE seller (
-    id SERIAL PRIMARY KEY,
-    user_id INT NOT NULL UNIQUE REFERENCES users(id),
-    store_name VARCHAR(255) NOT NULL,
-    tax_id VARCHAR(50) NOT NULL UNIQUE,
-    iban VARCHAR(50) NOT NULL,
-    is_verified BOOLEAN DEFAULT FALSE
-);
+**Функціональні залежності:**
+* `buyer_email` -> `buyer_full_name`, `buyer_phone` (Транзитивна залежність)
+* `product_name` -> `product_price`, `category_name` (Транзитивна залежність)
+* `shipping_zip` -> `shipping_city`
 
-CREATE TABLE category (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    parent_id INT REFERENCES category(id)
-);
+## 2. Перехід до Другої Нормальної Форми (2NF)
+Для досягнення 2NF ми розділяємо дані, щоб усунути часткові залежності. Ми виносимо сутності, які мають власні ключі.
 
-CREATE TABLE product (
-    id SERIAL PRIMARY KEY,
-    seller_id INT NOT NULL REFERENCES seller(id),
-    category_id INT NOT NULL REFERENCES category(id),
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    price DECIMAL(10, 2) NOT NULL CHECK (price > 0),
-    stock_quantity INT DEFAULT 0 CHECK (stock_quantity >= 0),
-    sku VARCHAR(100) UNIQUE,
-    is_active BOOLEAN DEFAULT TRUE,
-    version INT DEFAULT 1,
-    deleted_at TIMESTAMP
-);
+**Розділення на таблиці:**
+1.  **Users/Buyers**: Інформація про клієнтів (`buyer_email`, `phone`...).
+2.  **Products**: Інформація про товари (`name`, `price`, `category`).
+3.  **Orders**: Факти замовлення (`date`, `buyer_id`).
 
-CREATE TABLE orders (
-    id SERIAL PRIMARY KEY,
-    buyer_id INT NOT NULL REFERENCES buyer(id),
-    total_amount DECIMAL(12, 2) NOT NULL,
-    status VARCHAR(50) DEFAULT 'PENDING',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+## 3. Перехід до Третьої Нормальної Форми (3NF)
+Ми усуваємо транзитивні залежності (коли неключове поле залежить від іншого неключового поля).
 
-CREATE TABLE order_item (
-    id SERIAL PRIMARY KEY,
-    order_id INT NOT NULL REFERENCES orders(id),
-    product_id INT NOT NULL REFERENCES product(id),
-    quantity INT NOT NULL CHECK (quantity > 0),
-    price_at_purchase DECIMAL(10, 2) NOT NULL
-);
+**Зміни:**
+1.  Категорії винесено в окрему таблицю `category` (товар посилається на `category_id`).
+2.  Адреси винесено в таблицю `address`, щоб уникнути дублювання міст та індексів у замовленнях.
+3.  Деталі замовлення (кількість, ціна на момент покупки) винесено в `order_item` для зв'язку "Багато-до-багатьох" між замовленнями та товарами.
 
-CREATE TABLE address (
-    id SERIAL PRIMARY KEY,
-    user_id INT NOT NULL REFERENCES users(id),
-    country VARCHAR(100) NOT NULL,
-    city VARCHAR(100) NOT NULL,
-    street_line VARCHAR(255) NOT NULL,
-    zip_code VARCHAR(20) NOT NULL,
-    is_default BOOLEAN DEFAULT FALSE
-);
+## 4. Фінальна схема (Result)
+Фінальна схема (файл `normalization.sql`) знаходиться в 3NF. Всі таблиці мають первинні ключі, зв'язки реалізовані через Foreign Keys, дублювання даних відсутнє.
